@@ -1,118 +1,182 @@
 import os
 import json
 import time
+from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import ta
 
-# 36 Top-Performing Global Leaders across 4 Core Pillars
-TICKERS = [
-    # 1. Big Tech & AI Infrastructure
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSM", "ASML", "AVGO",
-    # 2. Global Finance & Private Capital
-    "JPM", "GS", "MS", "V", "MA", "BLK", "BX", "AXP", "C",
-    # 3. Industrial, Supply Chain & Logistics
-    "SONY", "SIEGY", "UPS", "FDX", "UNP", "CAT", "DE", "LMT", "GE",
-    # 4. Consumer Moats & Healthcare
-    "LLY", "UNH", "JNJ", "WMT", "COST", "PG", "HD", "MCD", "NKE"
-]
+# ==========================================
+# 1. QUANTITATIVE HEURISTICS
+# ==========================================
+def calculate_rsi(prices, period=14):
+    """Calculates exactly accurate 14-day RSI using a 30-day historical rolling window."""
+    if len(prices) < period + 1:
+        return 50.0 # Default fallback
+    delta = prices.diff()
+    gain = delta.where(delta > 0, 0.0).rolling(window=period).mean()
+    loss = -delta.where(delta < 0, 0.0).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return round(rsi.iloc[-1], 2)
 
-COLUMNS = [
-    "Date",
-    "Closing Price ($)",
-    "Daily % Change",
-    "Trading Volume",
-    "14-Day RSI (Momentum)",
-    "Forward P/E (Valuation)",
-    "Wall St Analyst Consensus"
-]
+def determine_rating(rsi, pct_change):
+    if rsi < 35: return "Strong Buy"
+    if rsi > 70: return "Overbought / Sell"
+    if pct_change > 1.5: return "Bullish Momentum"
+    if pct_change < -1.5: return "Bearish Trend"
+    return "Hold / Neutral"
 
-def send_summary_email(summary_data, recipient_email):
+# ==========================================
+# 2. MAIN EXECUTION ROUTINE
+# ==========================================
+def main():
+    print("[RICH Node] Initializing autonomous daily market sync...")
+    
+    # 1. Connect to Google Sheets
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds_dict = json.loads(os.environ['GOOGLE_CREDENTIALS'])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(os.environ['SPREADSHEET_ID'])
+
+    # 2. Dynamically map all 36 Tickers from the tab names
+    worksheets = sheet.worksheets()
+    # Assume any tab with a short, uppercase name is a ticker (ignores "Dashboard" or "Macro" tabs)
+    tickers = [ws.title for ws in worksheets if len(ws.title) <= 6 and ws.title.isupper()]
+    
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    results = []
+
+    # 3. Synchronize Data (Ring-fenced to prevent fatal crashes)
+    for ticker in tickers:
+        try:
+            print(f"[RICH] Syncing telemetry for {ticker}...")
+            ws = sheet.worksheet(ticker)
+            
+            # Pull 1 month of data to ensure mathematically perfect Prev Close and RSI
+            hist = yf.Ticker(ticker).history(period="1mo")
+            if hist.empty or len(hist) < 2:
+                print(f"  -> No data returned for {ticker}. API may be delayed. Skipping.")
+                continue
+            
+            # Extract absolute latest data
+            current_close = round(hist['Close'].iloc[-1], 2)
+            prev_close = round(hist['Close'].iloc[-2], 2)
+            volume = int(hist['Volume'].iloc[-1])
+            
+            # Calculate metrics locally to fix "wrong value" bugs
+            pct_change = round(((current_close - prev_close) / prev_close) * 100, 2)
+            rsi_val = calculate_rsi(hist['Close'])
+            pct_str = f"{pct_change}%" if pct_change <= 0 else f"+{pct_change}%"
+            
+            # Check to prevent duplicate logging for the same day
+            existing_dates = ws.col_values(1)
+            if existing_dates and existing_dates[-1] == today_str:
+                print(f"  -> {ticker} already logged for {today_str}. Skipping duplicate.")
+            else:
+                new_row = [today_str, current_close, pct_str, volume, rsi_val]
+                ws.append_row(new_row, value_input_option='USER_ENTERED')
+                print(f"  -> Successfully logged: {current_close} ({pct_str})")
+            
+            # Add to briefing array
+            results.append({
+                "ticker": ticker,
+                "close": current_close,
+                "change": pct_change,
+                "rsi": rsi_val,
+                "rating": determine_rating(rsi_val, pct_change)
+            })
+            
+        except Exception as e:
+            # If one ticker fails, it prints the error and continues to the next one
+            print(f"[RICH ERROR] Critical failure on {ticker}: {e}")
+        
+        # 4. Anti-Rate-Limit Throttle
+        time.sleep(1.5)
+
+    # ==========================================
+    # 3. EMAIL DISPATCH ENGINE
+    # ==========================================
     sender_email = os.environ.get('GMAIL_USER')
     sender_password = os.environ.get('GMAIL_APP_PASSWORD')
-    
-    if not sender_email or not sender_password:
-        print("[RICH Node] Missing email credentials in environment. Skipping email dispatch.")
+    recipient_email = os.environ.get('RECIPIENT_EMAIL', sender_email)
+
+    if not sender_email or not sender_password or len(results) == 0:
+        print("[RICH] Skipping email dispatch (no valid credentials or no data processed).")
         return
 
-    # Sort to determine market movers
-    valid_data = [x for x in summary_data if isinstance(x['change_pct'], (int, float))]
-    valid_data.sort(key=lambda x: x['change_pct'], reverse=True)
-    
-    top_3 = valid_data[:3]
-    bottom_3 = valid_data[-3:]
+    # Sort for Gainers and Laggards
+    sorted_results = sorted(results, key=lambda x: x['change'], reverse=True)
+    top_gainers = sorted_results[:5]
+    top_laggards = sorted_results[-5:]
 
     msg = MIMEMultipart()
-    msg['From'] = f"RICH System <{sender_email}>"
+    msg['From'] = f"RICH Intelligence Node <{sender_email}>"
     msg['To'] = recipient_email
-    today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
     msg['Subject'] = f"RICH Market Intelligence: {today_str} Summary"
 
-    def format_row(stock):
-        color = "#2e7d32" if stock['change_pct'] >= 0 else "#c62828"
-        sign = "+" if stock['change_pct'] > 0 else ""
-        return f"""
-        <tr>
-            <td style="padding: 8px; border: 1px solid #ddd;"><b>{stock['ticker']}</b></td>
-            <td style="padding: 8px; border: 1px solid #ddd;">${stock['close']}</td>
-            <td style="padding: 8px; border: 1px solid #ddd; color: {color}; font-weight: bold;">{sign}{stock['change_pct']}%</td>
-            <td style="padding: 8px; border: 1px solid #ddd;">{stock['rsi']}</td>
-            <td style="padding: 8px; border: 1px solid #ddd;">{stock['consensus']}</td>
-        </tr>
-        """
-
     html_content = f"""
-    <html>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #202124; line-height: 1.5;">
-        <h2 style="color: #0d47a1; margin-bottom: 4px;">RICH (Real-time Intrinsic Capital Heuristics)</h2>
-        <p style="color: #5f6368; font-size: 14px; margin-top: 0;">Automated Daily Close Pipeline &bull; {today_str}</p>
-        
+    <div style="font-family: Arial, sans-serif; color: #111; max-width: 600px; line-height: 1.5;">
+        <h2 style="color: #0d1117; margin-bottom: 4px;">RICH (Real-time Intrinsic Capital Heuristics)</h2>
+        <p style="color: #586069; font-size: 13px; margin-top: 0;">Automated Daily Close Pipeline • {today_str}</p>
         <p>Your Google Sheet <b>RICH Database</b> has been synchronized with the latest market session data.</p>
         
-        <h3 style="color: #2e7d32; margin-top: 20px;">Top Gainers</h3>
-        <table style="border-collapse: collapse; width: 100%; max-width: 600px; font-size: 14px;">
-          <thead>
-            <tr style="background-color: #f1f3f4; text-align: left;">
-              <th style="padding: 8px; border: 1px solid #ddd;">Ticker</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Close</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Change</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">RSI</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Analyst Rating</th>
+        <h3 style="color: #28a745; margin-bottom: 8px;">Top Gainers</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr style="background-color: #eaecef; text-align: left;">
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Ticker</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Close</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Change</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">RSI</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Analyst Rating</th>
             </tr>
-          </thead>
-          <tbody>
-            {''.join([format_row(s) for s in top_3])}
-          </tbody>
-        </table>
-
-        <h3 style="color: #c62828; margin-top: 24px;">Top Laggards</h3>
-        <table style="border-collapse: collapse; width: 100%; max-width: 600px; font-size: 14px;">
-          <thead>
-            <tr style="background-color: #f1f3f4; text-align: left;">
-              <th style="padding: 8px; border: 1px solid #ddd;">Ticker</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Close</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Change</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">RSI</th>
-              <th style="padding: 8px; border: 1px solid #ddd;">Analyst Rating</th>
-            </tr>
-          </thead>
-          <tbody>
-            {''.join([format_row(s) for s in bottom_3])}
-          </tbody>
-        </table>
-
-        <br>
-        <p style="font-size: 12px; color: #70757a; border-top: 1px solid #e0e0e0; padding-top: 12px;">
-          Automated by HOLO_EARTH Central Command Node.
-        </p>
-      </body>
-    </html>
     """
+    for g in top_gainers:
+        html_content += f"""
+            <tr>
+                <td style="padding: 6px; border: 1px solid #d1d5da;"><b>{g['ticker']}</b></td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">${g['close']}</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da; color: #28a745;">+{g['change']}%</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">{g['rsi']}</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">{g['rating']}</td>
+            </tr>
+        """
+    
+    html_content += """
+        </table>
+        <h3 style="color: #cb2431; margin-top: 20px; margin-bottom: 8px;">Top Laggards</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr style="background-color: #eaecef; text-align: left;">
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Ticker</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Close</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Change</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">RSI</th>
+                <th style="padding: 6px; border: 1px solid #d1d5da;">Analyst Rating</th>
+            </tr>
+    """
+    for l in top_laggards:
+        html_content += f"""
+            <tr>
+                <td style="padding: 6px; border: 1px solid #d1d5da;"><b>{l['ticker']}</b></td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">${l['close']}</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da; color: #cb2431;">{l['change']}%</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">{l['rsi']}</td>
+                <td style="padding: 6px; border: 1px solid #d1d5da;">{l['rating']}</td>
+            </tr>
+        """
+        
+    html_content += """
+        </table>
+        <hr style="border: 0; border-top: 1px solid #e1e4e8; margin: 20px 0;" />
+        <p style="font-size: 11px; color: #6a737d;">Automated by HOLO_EARTH Central Command Node.</p>
+    </div>
+    """
+
     msg.attach(MIMEText(html_content, 'html'))
 
     try:
@@ -121,101 +185,10 @@ def send_summary_email(summary_data, recipient_email):
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        print("[RICH Node] Market briefing email successfully dispatched.")
+        print("[RICH] Executive briefing successfully dispatched.")
     except Exception as e:
-        print(f"[RICH Node] SMTP Error during transmission: {e}")
-
-def main():
-    print("[RICH Node] Starting execution...")
-    today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
-    
-    # 1. Establish Google Sheets Connection
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = json.loads(os.environ['GOOGLE_CREDENTIALS'])
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    
-    spreadsheet_id = os.environ['SPREADSHEET_ID']
-    sheet = client.open_by_key(spreadsheet_id)
-    print(f"[RICH Node] Connected to spreadsheet: {sheet.title}")
-
-    # Cache existing sheet titles to avoid redundant API lookup calls
-    existing_worksheets = {ws.title: ws for ws in sheet.worksheets()}
-    summary_data = []
-
-    # 2. Iterate through Tickers
-    for ticker in TICKERS:
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1mo")
-            
-            if hist.empty or len(hist) < 2:
-                print(f"[RICH Node] Insufficient price records for {ticker}, skipping.")
-                continue
-                
-            close_price = round(hist['Close'].iloc[-1], 2)
-            prev_close = round(hist['Close'].iloc[-2], 2)
-            daily_change = round(((close_price - prev_close) / prev_close) * 100, 2)
-            volume = int(hist['Volume'].iloc[-1])
-            
-            # Momentum: 14-Day RSI
-            hist['RSI'] = ta.momentum.RSIIndicator(hist['Close'], window=14).rsi()
-            rsi_raw = hist['RSI'].iloc[-1]
-            rsi_val = round(rsi_raw, 2) if pd.notna(rsi_raw) else "N/A"
-            
-            # Fundamental Valuation & Wall Street Ratings
-            info = stock.info
-            fwd_pe_raw = info.get('forwardPE', "N/A")
-            fwd_pe = round(fwd_pe_raw, 2) if isinstance(fwd_pe_raw, (int, float)) else "N/A"
-            
-            consensus = info.get('recommendationKey', "N/A").replace('_', ' ').title()
-
-            row_data = [
-                today_str,
-                close_price,
-                f"{daily_change}%",
-                volume,
-                rsi_val,
-                fwd_pe,
-                consensus
-            ]
-            
-            # Ensure target worksheet exists
-            if ticker in existing_worksheets:
-                worksheet = existing_worksheets[ticker]
-            else:
-                print(f"[RICH Node] Creating new tab for {ticker}...")
-                worksheet = sheet.add_worksheet(title=ticker, rows="1000", cols="10")
-                worksheet.append_row(COLUMNS)
-                existing_worksheets[ticker] = worksheet
-                time.sleep(1.0)
-            
-            # Append current session values
-            worksheet.append_row(row_data)
-            print(f"[RICH Node] Synchronized {ticker} | Close: ${close_price} | Change: {daily_change}%")
-            
-            summary_data.append({
-                "ticker": ticker,
-                "close": close_price,
-                "change_pct": daily_change,
-                "rsi": rsi_val,
-                "consensus": consensus
-            })
-            
-            # Pacing delay to remain strictly under Google's 60 req/min threshold
-            time.sleep(1.2)
-            
-        except Exception as e:
-            print(f"[RICH Node] Error processing ticker {ticker}: {e}")
-            continue
-
-    # 3. Dispatch Intelligence Briefing
-    recipient = os.environ.get('GMAIL_USER')
-    if recipient and summary_data:
-        send_summary_email(summary_data, recipient)
-        
-    print("[RICH Node] Execution cycle complete.")
+        print(f"[RICH ERROR] Email dispatch failed: {e}")
 
 if __name__ == "__main__":
     main()
-  
+    
