@@ -1,0 +1,79 @@
+name: Generate Master Tickers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-list:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install pandas lxml html5lib requests
+
+      - name: Scrape Global Indices
+        run: |
+          python -c "
+          import pandas as pd
+          import requests
+
+          def get_tables(url):
+              res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+              return pd.read_html(res.text)
+
+          tickers = set()
+
+          print('Scraping S&P 500 (USA)...')
+          tickers.update(get_tables('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]['Symbol'].tolist())
+
+          print('Scraping Nasdaq 100 (USA)...')
+          tickers.update(get_tables('https://en.wikipedia.org/wiki/Nasdaq-100')[4]['Ticker'].tolist())
+
+          print('Scraping Nikkei 225 (Japan)...')
+          tickers.update([f'{str(t)}.T' for t in get_tables('https://en.wikipedia.org/wiki/Nikkei_225')[0]['Ticker'].tolist()])
+
+          print('Scraping NIFTY 50 (India)...')
+          tickers.update([f'{str(t)}.NS' for t in get_tables('https://en.wikipedia.org/wiki/NIFTY_50')[2]['Symbol'].tolist()])
+
+          print('Scraping FTSE 100 (UK)...')
+          tickers.update([f'{str(t)}.L' for t in get_tables('https://en.wikipedia.org/wiki/FTSE_100_Index')[4]['Ticker'].tolist()])
+
+          print('Scraping DAX 40 (Germany)...')
+          tickers.update(get_tables('https://en.wikipedia.org/wiki/DAX')[4]['Ticker'].tolist())
+
+          print('Scraping CAC 40 (France)...')
+          tickers.update([f'{str(t)}.PA' for t in get_tables('https://en.wikipedia.org/wiki/CAC_40')[3]['Ticker'].tolist()])
+
+          print('Scraping ASX 200 (Australia)...')
+          tickers.update([f'{str(t)}.AX' for t in get_tables('https://en.wikipedia.org/wiki/S%26P/ASX_200')[0]['Code'].tolist()])
+
+          # Manual injection of UAE Core Blue-Chips (DFM & ADX)
+          uae_heavyweights = ['EMAAR.DU', 'ENBD.DU', 'DIB.DU', 'DEWA.DU', 'AIRARABIA.DU', 'ALDAR.AD', 'FAB.AD', 'TAQA.AD']
+          tickers.update(uae_heavyweights)
+
+          clean_tickers = sorted([str(t).replace('.', '-') for t in tickers if str(t) != 'nan'])
+
+          with open('master_tickers.txt', 'w') as f:
+              f.write('\n'.join(clean_tickers))
+          print(f'Successfully compiled {len(clean_tickers)} global entities.')
+          "
+
+      - name: Commit File to Repository
+        run: |
+          git config --global user.name "HOLO-EARTH Automation"
+          git config --global user.email "automation@holoearth.system"
+          git add master_tickers.txt
+          git commit -m "Auto-generated master_tickers.txt with global indices"
+          git push
+
+          
