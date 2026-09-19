@@ -10,27 +10,7 @@ import yfinance as yf
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
-# ==========================================
-# 1. STRATEGIC TARGETS (The 36 Entities)
-# ==========================================
-TARGET_TICKERS = [
-    # Logistics & Maritime
-    "SIEGY", "UPS", "FDX", "EXPD", "CHRW", "ZIM",
-    # Tech & AI Infrastructure
-    "SONY", "NVDA", "AMD", "MSFT", "GOOGL", "AMZN", "META", "AAPL", "TSM", "ASML",
-    # Defense, Aerospace & Industrials
-    "LMT", "RTX", "NOC", "GD", "BA", "CAT", "DE",
-    # Energy, Materials & Sovereign Proxies
-    "XOM", "CVX", "SLB", "FCX", "ALB",
-    # Consumer & Financial barometers
-    "WMT", "TGT", "COST", "JPM", "GS", "MS", "BLK", "ACN"
-]
-
-# ==========================================
-# 2. QUANTITATIVE HEURISTICS
-# ==========================================
 def calculate_rsi(prices, period=14):
-    """Calculates exactly accurate 14-day RSI using a 30-day historical rolling window."""
     if len(prices) < period + 1:
         return 50.0 
     delta = prices.diff()
@@ -47,9 +27,6 @@ def determine_rating(rsi, pct_change):
     if pct_change < -1.5: return "Bearish Trend"
     return "Hold / Neutral"
 
-# ==========================================
-# 3. BIGQUERY INGESTION ENGINE (Sandbox Safe)
-# ==========================================
 def stream_to_bigquery(client, table_id, rows_to_insert):
     if not rows_to_insert:
         return
@@ -64,68 +41,77 @@ def stream_to_bigquery(client, table_id, rows_to_insert):
     except Exception as e:
         print(f"[BIGQUERY ERROR] {e}")
 
-# ==========================================
-# 4. MAIN EXECUTION ROUTINE
-# ==========================================
 def main():
-    print("[RICH Node] Initializing BigQuery market sync...")
+    print("[RICH Node] Initializing BigQuery global market sync...")
     
     creds_dict = json.loads(os.environ['GOOGLE_CREDENTIALS'])
     credentials = service_account.Credentials.from_service_account_info(creds_dict)
     client = bigquery.Client(credentials=credentials, project=creds_dict['project_id'])
     table_id = f"{creds_dict['project_id']}.telemetry_bronze.market_signals"
 
+    try:
+        with open('master_tickers.txt', 'r') as f:
+            target_tickers = [line.strip().upper() for line in f if line.strip()]
+    except FileNotFoundError:
+        print("[RICH ERROR] master_tickers.txt not found. Aborting.")
+        return
+
+    print(f"[RICH] Loaded {len(target_tickers)} entities. Executing bulk extraction...")
+
     timestamp_iso = datetime.utcnow().isoformat()
     bq_payload = []
     email_results = []
 
-    for ticker in TARGET_TICKERS:
+    # Batch download in chunks of 500
+    chunk_size = 500
+    for i in range(0, len(target_tickers), chunk_size):
+        chunk = target_tickers[i:i + chunk_size]
         try:
-            print(f"[RICH] Extracting telemetry for {ticker}...")
-            hist = yf.Ticker(ticker).history(period="1mo")
-            if hist.empty or len(hist) < 2:
-                print(f"  -> No data for {ticker}. API timeout. Skipping.")
-                continue
+            print(f"[RICH] Fetching batch {i+1} to {min(i+chunk_size, len(target_tickers))}...")
+            data = yf.download(chunk, period="1mo", group_by="ticker", threads=True, progress=False)
             
-            current_close = round(hist['Close'].iloc[-1], 2)
-            prev_close = round(hist['Close'].iloc[-2], 2)
-            volume = int(hist['Volume'].iloc[-1])
-            
-            pct_change = round(((current_close - prev_close) / prev_close) * 100, 2)
-            rsi_val = calculate_rsi(hist['Close'])
-            rating = determine_rating(rsi_val, pct_change)
-            
-            bq_payload.append({
-                "timestamp": timestamp_iso,
-                "domain": "RICH",
-                "entity_id": ticker,
-                "signal_type": "Daily Market Close",
-                "raw_data": {
-                    "close_price": current_close,
-                    "percent_change": pct_change,
-                    "volume": volume,
-                    "rsi_14d": rsi_val,
-                    "algorithmic_rating": rating
-                }
-            })
-            
-            email_results.append({
-                "ticker": ticker, "close": current_close, 
-                "change": pct_change, "rsi": rsi_val, "rating": rating
-            })
-            
+            for ticker in chunk:
+                try:
+                    hist = data[ticker] if len(chunk) > 1 else data
+                    hist = hist.dropna(subset=['Close'])
+                    if hist.empty or len(hist) < 2:
+                        continue
+                    
+                    current_close = round(float(hist['Close'].iloc[-1]), 2)
+                    prev_close = round(float(hist['Close'].iloc[-2]), 2)
+                    volume = int(hist['Volume'].iloc[-1])
+                    
+                    pct_change = round(((current_close - prev_close) / prev_close) * 100, 2)
+                    rsi_val = calculate_rsi(hist['Close'])
+                    rating = determine_rating(rsi_val, pct_change)
+                    
+                    bq_payload.append({
+                        "timestamp": timestamp_iso,
+                        "domain": "RICH",
+                        "entity_id": ticker,
+                        "signal_type": "Daily Market Close",
+                        "raw_data": {
+                            "close_price": current_close,
+                            "percent_change": pct_change,
+                            "volume": volume,
+                            "rsi_14d": rsi_val,
+                            "algorithmic_rating": rating
+                        }
+                    })
+                    
+                    email_results.append({
+                        "ticker": ticker, "close": current_close, 
+                        "change": pct_change, "rsi": rsi_val, "rating": rating
+                    })
+                except Exception:
+                    continue
         except Exception as e:
-            print(f"[RICH ERROR] Critical failure on {ticker}: {e}")
-        
-        time.sleep(1.5) # Anti-ban throttle
+            print(f"[RICH ERROR] Batch failure: {e}")
 
-    # Push to BigQuery
     if bq_payload:
         stream_to_bigquery(client, table_id, bq_payload)
 
-    # ==========================================
-    # 5. EMAIL DISPATCH ENGINE
-    # ==========================================
+    # Email Dispatch
     sender_email = os.environ.get('GMAIL_USER')
     sender_password = os.environ.get('GMAIL_APP_PASSWORD')
     recipient_email = os.environ.get('RECIPIENT_EMAIL', sender_email)
@@ -140,28 +126,27 @@ def main():
     msg = MIMEMultipart()
     msg['From'] = f"RICH Intelligence Node <{sender_email}>"
     msg['To'] = recipient_email
-    msg['Subject'] = f"RICH Market Intelligence: BigQuery Sync Complete"
+    msg['Subject'] = f"RICH Market Intelligence: Global Sync Complete ({len(bq_payload)} entities)"
 
     html_content = f"""
     <div style="font-family: Arial, sans-serif; color: #111; max-width: 600px; line-height: 1.5;">
-        <h2 style="color: #0d1117; margin-bottom: 4px;">RICH Terminal: BigQuery Sync</h2>
+        <h2 style="color: #0d1117; margin-bottom: 4px;">RICH Terminal: Global BigQuery Sync</h2>
         <p style="color: #586069; font-size: 13px; margin-top: 0;">Executed at {timestamp_iso} UTC</p>
-        <p>The <b>market_signals</b> database has been injected with end-of-day equity data.</p>
+        <p>Successfully processed <b>{len(bq_payload)}</b> global equities into the <b>market_signals</b> warehouse.</p>
         <hr style="border: 0; border-top: 1px solid #e1e4e8; margin: 16px 0;" />
     """
     
-    # Helper to generate tables
     def generate_table(title, data, color):
         html = f"<h3 style='color: {color}; margin-bottom: 8px;'>{title}</h3>"
         html += "<table style='width: 100%; border-collapse: collapse; font-size: 13px;'>"
         html += "<tr style='background-color: #eaecef; text-align: left;'><th style='padding: 6px; border: 1px solid #d1d5da;'>Ticker</th><th style='padding: 6px; border: 1px solid #d1d5da;'>Close</th><th style='padding: 6px; border: 1px solid #d1d5da;'>Change</th><th style='padding: 6px; border: 1px solid #d1d5da;'>RSI</th></tr>"
         for item in data:
-            html += f"<tr><td style='padding: 6px; border: 1px solid #d1d5da;'><b>{item['ticker']}</b></td><td style='padding: 6px; border: 1px solid #d1d5da;'>${item['close']}</td><td style='padding: 6px; border: 1px solid #d1d5da; color: {color};'>{item['change']}%</td><td style='padding: 6px; border: 1px solid #d1d5da;'>{item['rsi']}</td></tr>"
+            html += f"<tr><td style='padding: 6px; border: 1px solid #d1d5da;'><b>{item['ticker']}</b></td><td style='padding: 6px; border: 1px solid #d1d5da;'>${item['close']}</td><td style='padding: 6px; border: 1px solid #d1d5da; color: {color};'><b>{item['change']}%</b></td><td style='padding: 6px; border: 1px solid #d1d5da;'>{item['rsi']}</td></tr>"
         return html + "</table>"
 
-    html_content += generate_table("Top Gainers", top_gainers, "#28a745")
+    html_content += generate_table("Top Global Gainers", top_gainers, "#28a745")
     html_content += "<br>"
-    html_content += generate_table("Top Laggards", top_laggards, "#cb2431")
+    html_content += generate_table("Top Global Laggards", top_laggards, "#cb2431")
     
     html_content += "</div>"
     msg.attach(MIMEText(html_content, 'html'))
@@ -177,4 +162,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
+    
