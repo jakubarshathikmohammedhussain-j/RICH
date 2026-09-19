@@ -5,7 +5,11 @@ on:
     # 22:00 UTC corresponds to 3:30 AM IST (Tuesday-Saturday morning), capturing fully settled US market closes
     - cron: '0 22 * * 1-5'
   workflow_dispatch:
-
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:
+  
 jobs:
   execute-rich-pipeline:
     runs-on: ubuntu-latest
