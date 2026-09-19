@@ -21,7 +21,7 @@ jobs:
       - name: Install Dependencies
         run: pip install pandas lxml html5lib requests
 
-      - name: Scrape Global Indices
+            - name: Scrape Global Indices
         run: |
           python -c "
           import pandas as pd
@@ -31,42 +31,73 @@ jobs:
               res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
               return pd.read_html(res.text)
 
+          def find_ticker_column(df):
+              for col in df.columns:
+                  col_str = str(col).lower()
+                  if 'ticker' in col_str or 'symbol' in col_str or 'code' in col_str:
+                      return col
+              return df.columns[0]
+
           tickers = set()
 
-          print('Scraping S&P 500 (USA)...')
-          tickers.update(get_tables('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]['Symbol'].tolist())
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
+              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+          except Exception as e:
+              print(f'S&P 500 error: {e}')
 
-          print('Scraping Nasdaq 100 (USA)...')
-          tickers.update(get_tables('https://en.wikipedia.org/wiki/Nasdaq-100')[4]['Ticker'].tolist())
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
+              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+          except Exception as e:
+              print(f'Nasdaq error: {e}')
 
-          print('Scraping Nikkei 225 (Japan)...')
-          tickers.update([f'{str(t)}.T' for t in get_tables('https://en.wikipedia.org/wiki/Nikkei_225')[0]['Ticker'].tolist()])
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/Nikkei_225')[0]
+              tickers.update([f'{str(t)}.T' for t in df[find_ticker_column(df)].dropna().tolist()])
+          except Exception as e:
+              print(f'Nikkei error: {e}')
 
-          print('Scraping NIFTY 50 (India)...')
-          tickers.update([f'{str(t)}.NS' for t in get_tables('https://en.wikipedia.org/wiki/NIFTY_50')[2]['Symbol'].tolist()])
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/NIFTY_50')[2]
+              tickers.update([f'{str(t)}.NS' for t in df[find_ticker_column(df)].dropna().tolist()])
+          except Exception as e:
+              print(f'NIFTY error: {e}')
 
-          print('Scraping FTSE 100 (UK)...')
-          tickers.update([f'{str(t)}.L' for t in get_tables('https://en.wikipedia.org/wiki/FTSE_100_Index')[4]['Ticker'].tolist()])
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/FTSE_100_Index')[4]
+              tickers.update([f'{str(t)}.L' for t in df[find_ticker_column(df)].dropna().tolist()])
+          except Exception as e:
+              print(f'FTSE error: {e}')
 
-          print('Scraping DAX 40 (Germany)...')
-          tickers.update(get_tables('https://en.wikipedia.org/wiki/DAX')[4]['Ticker'].tolist())
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/DAX')[4]
+              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+          except Exception as e:
+              print(f'DAX error: {e}')
 
-          print('Scraping CAC 40 (France)...')
-          tickers.update([f'{str(t)}.PA' for t in get_tables('https://en.wikipedia.org/wiki/CAC_40')[3]['Ticker'].tolist()])
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/CAC_40')[3]
+              tickers.update([f'{str(t)}.PA' for t in df[find_ticker_column(df)].dropna().tolist()])
+          except Exception as e:
+              print(f'CAC error: {e}')
 
-          print('Scraping ASX 200 (Australia)...')
-          tickers.update([f'{str(t)}.AX' for t in get_tables('https://en.wikipedia.org/wiki/S%26P/ASX_200')[0]['Code'].tolist()])
+          try:
+              df = get_tables('https://en.wikipedia.org/wiki/S%26P/ASX_200')[0]
+              tickers.update([f'{str(t)}.AX' for t in df[find_ticker_column(df)].dropna().tolist()])
+          except Exception as e:
+              print(f'ASX error: {e}')
 
-          # Manual injection of UAE Core Blue-Chips (DFM & ADX)
           uae_heavyweights = ['EMAAR.DU', 'ENBD.DU', 'DIB.DU', 'DEWA.DU', 'AIRARABIA.DU', 'ALDAR.AD', 'FAB.AD', 'TAQA.AD']
           tickers.update(uae_heavyweights)
 
-          clean_tickers = sorted([str(t).replace('.', '-') for t in tickers if str(t) != 'nan'])
+          clean_tickers = sorted([str(t).replace('.', '-').strip() for t in tickers if str(t) != 'nan'])
 
           with open('master_tickers.txt', 'w') as f:
               f.write('\n'.join(clean_tickers))
           print(f'Successfully compiled {len(clean_tickers)} global entities.')
           "
+
 
       - name: Commit File to Repository
         run: |
