@@ -21,7 +21,7 @@ jobs:
       - name: Install Dependencies
         run: pip install pandas lxml html5lib requests
 
-      - name: Scrape Global Indices
+      - name: Scrape Global Indices (2500+ Entities)
         run: |
           python -c "
           import pandas as pd
@@ -41,92 +41,64 @@ jobs:
 
           def is_valid_ticker(t):
               t_str = str(t).strip()
-              invalid_words = ['nan', 'none', 'website', 'type', 'constituents', 'trading symbol', 'weighting method', 'related indices']
-              if not t_str or t_str.lower() in invalid_words:
-                  return False
-              if t_str.isdigit() or re.match(r'^(19|20)\d{2}', t_str):
-                  return False
-              if len(t_str) > 12:
-                  return False
+              invalid_words = ['nan', 'none', 'website', 'type', 'constituents', 'trading symbol']
+              if not t_str or t_str.lower() in invalid_words: return False
+              if t_str.isdigit() or re.match(r'^(19|20)\d{2}', t_str): return False
+              if len(t_str) > 10: return False
               return True
 
           tickers = set()
 
-          # 1. US Markets (Replace dots with hyphens for share classes like BRK.B -> BRK-B)
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-              tickers.update([str(t).replace('.', '-').strip().upper() for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception as e:
-              print(f'S&P 500 error: {e}')
+          # Helper for US Markets (replaces dot with hyphen for share classes)
+          def add_us(url):
+              try:
+                  tables = get_tables(url)
+                  for df in tables:
+                      if len(df) > 50:
+                          col = find_ticker_column(df)
+                          for t in df[col].dropna().tolist():
+                              if is_valid_ticker(t):
+                                  tickers.add(str(t).replace('.', '-').strip().upper())
+              except Exception as e: print(f'US Scrape error: {e}')
 
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
-              tickers.update([str(t).replace('.', '-').strip().upper() for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception as e:
-              print(f'Nasdaq error: {e}')
+          # Helper for Intl Markets (strips dots, adds strict YF suffix)
+          def add_intl(url, suffix):
+              try:
+                  tables = get_tables(url)
+                  for df in tables:
+                      if len(df) > 30:
+                          col = find_ticker_column(df)
+                          for t in df[col].dropna().tolist():
+                              if is_valid_ticker(t):
+                                  base = str(t).split('.')[0].strip().upper()
+                                  tickers.add(f'{base}{suffix}')
+              except Exception as e: print(f'Intl Scrape error: {e}')
 
-          # 2. International Markets (Strip Wikipedia artifacts, apply strict YF dot-suffixes)
-          def clean_intl(t, suffix):
-              base = str(t).split('.')[0].strip().upper()
-              return f'{base}{suffix}'
+          # 1. US Markets (S&P 1500 + Nasdaq 100) -> ~1,600 targets
+          add_us('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+          add_us('https://en.wikipedia.org/wiki/List_of_S%26P_400_companies')
+          add_us('https://en.wikipedia.org/wiki/List_of_S%26P_600_companies')
+          add_us('https://en.wikipedia.org/wiki/Nasdaq-100')
 
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/Nikkei_225')[0]
-              tickers.update([clean_intl(t, '.T') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
+          # 2. International Markets -> ~1,000+ targets
+          add_intl('https://en.wikipedia.org/wiki/FTSE_100_Index', '.L')
+          add_intl('https://en.wikipedia.org/wiki/FTSE_250_Index', '.L')
+          add_intl('https://en.wikipedia.org/wiki/S%26P/TSX_Composite_Index', '.TO')
+          add_intl('https://en.wikipedia.org/wiki/Nikkei_225', '.T')
+          add_intl('https://en.wikipedia.org/wiki/S%26P/ASX_200', '.AX')
+          add_intl('https://en.wikipedia.org/wiki/NIFTY_50', '.NS')
+          add_intl('https://en.wikipedia.org/wiki/DAX', '.DE')
+          add_intl('https://en.wikipedia.org/wiki/CAC_40', '.PA')
 
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/NIFTY_50')[2]
-              tickers.update([clean_intl(t, '.NS') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
+          # 3. Middle East Strategic Injection
+          tickers.update(['EMAAR.DU', 'ENBD.DU', 'DIB.DU', 'DEWA.DU', 'AIRARABIA.DU', 'ALDAR.AD', 'FAB.AD', 'TAQA.AD'])
 
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/S%26P/ASX_200')[0]
-              tickers.update([clean_intl(t, '.AX') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/FTSE_100_Index')[4]
-              tickers.update([clean_intl(t, '.L') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/DAX')[4]
-              tickers.update([clean_intl(t, '.DE') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/CAC_40')[3]
-              tickers.update([clean_intl(t, '.PA') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/S%26P/TSX_60')[0]
-              tickers.update([clean_intl(t, '.TO') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-          
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/Hang_Seng_Index')[4]
-              tickers.update([clean_intl(t, '.HK') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-          
-          try:
-              df = get_tables('https://en.wikipedia.org/wiki/Ibovespa')[1]
-              tickers.update([clean_intl(t, '.SA') for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
-          except Exception: pass
-
-          # 3. Middle East Logistics/Finance
-          uae_heavyweights = ['EMAAR.DU', 'ENBD.DU', 'DIB.DU', 'DEWA.DU', 'AIRARABIA.DU', 'ALDAR.AD', 'FAB.AD', 'TAQA.AD']
-          tickers.update(uae_heavyweights)
-
-          # Final sorting (NO global replacements here)
           clean_tickers = sorted(list(tickers))
-
           with open('master_tickers.txt', 'w') as f:
               f.write('\n'.join(clean_tickers))
           print(f'Successfully compiled {len(clean_tickers)} mapped global entities.')
           "
-
+          
 
 
       - name: Commit File to Repository
