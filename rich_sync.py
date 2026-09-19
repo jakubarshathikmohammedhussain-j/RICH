@@ -85,19 +85,17 @@ def main():
                     rsi_val = calculate_rsi(hist['Close'])
                     rating = determine_rating(rsi_val, pct_change)
                     
-                    bq_payload.append({
-                        "timestamp": timestamp_iso,
-                        "domain": "RICH",
-                        "entity_id": ticker,
-                        "signal_type": "Daily Market Close",
-                        "raw_data": {
-                            "close_price": current_close,
-                            "percent_change": pct_change,
-                            "volume": volume,
-                            "rsi_14d": rsi_val,
-                            "algorithmic_rating": rating
-                        }
-                    })
+                  
+    bq_payload.append({
+    "timestamp": timestamp_iso,
+    "ticker": ticker,
+    "close_price": current_close,
+    "percent_change": pct_change,
+    "volume": volume,
+    "rsi_14d": rsi_val,
+    "algorithmic_rating": rating
+})
+
                     
                     email_results.append({
                         "ticker": ticker, "close": current_close, 
