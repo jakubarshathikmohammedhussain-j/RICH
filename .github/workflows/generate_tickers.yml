@@ -21,7 +21,7 @@ jobs:
       - name: Install Dependencies
         run: pip install pandas lxml html5lib requests
 
-            - name: Scrape Global Indices
+      - name: Scrape Global Indices
         run: |
           python -c "
           import pandas as pd
