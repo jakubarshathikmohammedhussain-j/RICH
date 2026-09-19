@@ -26,6 +26,7 @@ jobs:
           python -c "
           import pandas as pd
           import requests
+          import re
 
           def get_tables(url):
               res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -38,65 +39,77 @@ jobs:
                       return col
               return df.columns[0]
 
+          def is_valid_ticker(t):
+              t_str = str(t).strip()
+              # Filter out NaN, empty strings, pure 4-digit years, and header noise
+              if not t_str or t_str.lower() in ['nan', 'none', 'website', 'type', 'constituents', 'trading symbol', 'weighting method', 'related indices']:
+                  return False
+              if re.match(r'^(19|20)\d{2}', t_str): # Filter out years like 1970-PA
+                  return False
+              if len(t_str) > 12:
+                  return False
+              return True
+
           tickers = set()
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+              tickers.update([t for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'S&P 500 error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
-              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+              tickers.update([t for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'Nasdaq error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/Nikkei_225')[0]
-              tickers.update([f'{str(t)}.T' for t in df[find_ticker_column(df)].dropna().tolist()])
+              tickers.update([f'{str(t).strip()}.T' for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'Nikkei error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/NIFTY_50')[2]
-              tickers.update([f'{str(t)}.NS' for t in df[find_ticker_column(df)].dropna().tolist()])
+              tickers.update([f'{str(t).strip()}.NS' for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'NIFTY error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/FTSE_100_Index')[4]
-              tickers.update([f'{str(t)}.L' for t in df[find_ticker_column(df)].dropna().tolist()])
+              tickers.update([f'{str(t).strip()}.L' for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'FTSE error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/DAX')[4]
-              tickers.update(df[find_ticker_column(df)].dropna().tolist())
+              tickers.update([t for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'DAX error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/CAC_40')[3]
-              tickers.update([f'{str(t)}.PA' for t in df[find_ticker_column(df)].dropna().tolist()])
+              tickers.update([f'{str(t).strip()}.PA' for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'CAC error: {e}')
 
           try:
               df = get_tables('https://en.wikipedia.org/wiki/S%26P/ASX_200')[0]
-              tickers.update([f'{str(t)}.AX' for t in df[find_ticker_column(df)].dropna().tolist()])
+              tickers.update([f'{str(t).strip()}.AX' for t in df[find_ticker_column(df)].dropna().tolist() if is_valid_ticker(t)])
           except Exception as e:
               print(f'ASX error: {e}')
 
           uae_heavyweights = ['EMAAR.DU', 'ENBD.DU', 'DIB.DU', 'DEWA.DU', 'AIRARABIA.DU', 'ALDAR.AD', 'FAB.AD', 'TAQA.AD']
           tickers.update(uae_heavyweights)
 
-          clean_tickers = sorted([str(t).replace('.', '-').strip() for t in tickers if str(t) != 'nan'])
+          clean_tickers = sorted([str(t).replace('.', '-').upper().strip() for t in tickers if is_valid_ticker(t)])
 
           with open('master_tickers.txt', 'w') as f:
               f.write('\n'.join(clean_tickers))
-          print(f'Successfully compiled {len(clean_tickers)} global entities.')
+          print(f'Successfully compiled {len(clean_tickers)} validated global entities.')
           "
+
 
 
       - name: Commit File to Repository
