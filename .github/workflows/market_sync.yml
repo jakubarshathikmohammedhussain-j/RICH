@@ -5,11 +5,7 @@ on:
     # 22:00 UTC corresponds to 3:30 AM IST (Tuesday-Saturday morning), capturing fully settled US market closes
     - cron: '0 22 * * 1-5'
   workflow_dispatch:
-on:
-  schedule:
-    - cron: '0 22 * * 1-5'
-  workflow_dispatch:
-  
+
 jobs:
   execute-rich-pipeline:
     runs-on: ubuntu-latest
@@ -26,10 +22,11 @@ jobs:
 
       - name: Install Dependencies
         run: pip install -r requirements.txt
+
+      - name: Execute Daily Tracker & Trigger Email
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python rich_sync.py
         
-    - name: Execute Daily Tracker & Trigger Email
-      env:
-        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        GMAIL_USER: ${{ secrets.GMAIL_USER }}
-        GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-      run: python rich_sync.py
