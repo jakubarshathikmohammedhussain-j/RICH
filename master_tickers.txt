@@ -1,66 +1,8 @@
 10000
-1969-PA
-1970-PA
-1971-PA
-1972-PA
-1973-PA
-1974-PA
-1975-PA
-1976-PA
-1977-PA
-1978-PA
-1979-PA
-1980-PA
-1981-PA
-1982-PA
-1983-PA
-1984-PA
-1985-PA
-1986-PA
-1987-PA
-1988-PA
-1989-PA
-1990-PA
-1991-PA
-1992-PA
-1993-PA
-1994-PA
-1995-PA
-1996-PA
-1997-PA
-1998-PA
-1999-PA
-2000-PA
-20000
-2001-PA
-2002-PA
-2003-PA
-2004-PA
-2005-PA
-2006-PA
-2007-PA
-2008-PA
-2009-PA
-2010-PA
-2011-PA
-2012-PA
-2013-PA
-2014-PA
-2015-PA
-2016-PA
-2017-PA
-2018-PA
-2019-PA
-2020-PA
-2021-PA
-2022-PA
-2023-PA
-2024-PA
-2025-PA
 30000
 A
 AAPL
-ABB India-NS
+ABB INDIA-NS
 ABBV
 ABNB
 ABT
@@ -115,8 +57,6 @@ AWK
 AXON
 AXP
 AZO
-Ambuja Cements-NS
-Aurobindo Pharma-NS
 BA
 BAC
 BALL
@@ -135,6 +75,7 @@ BKNG
 BKR
 BLDR
 BLK
+BLOOMBERG-AX
 BMW-DE
 BMY
 BNR-DE
@@ -145,18 +86,12 @@ BRO
 BSX
 BX
 BXP
-Bajaj Auto-NS
-Bank of Baroda-NS
-Bharat Petroleum-NS
-Bharti Infratel-NS
-Bloomberg-AX
-Bosch India-NS
-Britannia Industries-NS
 C
 CAH
 CARR
 CASY
 CAT
+CATEGORY-L
 CB
 CBK-DE
 CBOE
@@ -175,6 +110,7 @@ CI
 CIEN
 CINF
 CL
+CLOSING-L
 CLX
 CMCSA
 CME
@@ -207,13 +143,8 @@ CTVA
 CVNA
 CVS
 CVX
-Cairn India-NS
-Category-L
-Closing-L
-Colgate-Palmolive India-NS
-Constituents-AX
-Constituents-T
 D
+DABUR-NS
 DAL
 DASH
 DB1-DE
@@ -246,9 +177,6 @@ DUK
 DVA
 DVN
 DXCM
-Dabur-NS
-Divi's Laboratories-NS
-Dr- Reddy's Laboratories-NS
 EBAY
 ECHO
 ECL
@@ -275,12 +203,12 @@ ETR
 EVRG
 EW
 EXC
+EXCHANGES-AX
+EXCHANGES-T
 EXE
 EXPD
 EXPE
 EXR
-Exchanges-AX
-Exchanges-T
 F
 FAB-AD
 FANG
@@ -299,6 +227,7 @@ FITB
 FIX
 FLEX
 FME-DE
+FOUNDATION-T
 FOX
 FOXA
 FRE-DE
@@ -306,8 +235,6 @@ FRT
 FSLR
 FTNT
 FTV
-Foundation-AX
-Foundation-T
 G1A-DE
 G24-DE
 GAIL-NS
@@ -330,8 +257,6 @@ GPN
 GRMN
 GS
 GWW
-GlaxoSmithKline Pharmaceuticals-NS
-Grasim Industries-NS
 HAL
 HAS
 HBAN
@@ -356,8 +281,6 @@ HSY
 HUBB
 HUM
 HWM
-Hero MotoCorp-NS
-Hindustan Petroleum-NS
 IBKR
 IBM
 ICE
@@ -368,6 +291,7 @@ IFF
 IFX-DE
 INCY
 INTC
+INTRADAY-L
 INTU
 INVH
 IP
@@ -379,22 +303,13 @@ ISRG
 IT
 ITW
 IVZ
-Idea Cellular-NS
-Indiabulls Housing Finance-NS
-Indian Hotels Company-NS
-Indian Oil Corporation-NS
-IndusInd Bank-NS
-Intraday-L
 J
 JBHT
 JBL
 JCI
 JKHY
 JNJ
-JP Associates-NS
 JPM
-Jet Airways-NS
-Jindal Steel & Power-NS
 KDP
 KEY
 KEYS
@@ -420,13 +335,12 @@ LMT
 LNT
 LOW
 LRCX
-LTIMindtree-NS
 LULU
+LUPIN-NS
 LUV
 LVS
 LYB
 LYV
-Lupin-NS
 MA
 MAA
 MAR
@@ -464,7 +378,6 @@ MTNL-NS
 MTX-DE
 MU
 MUV2-DE
-Market cap-AX
 NALCO-NS
 NCLH
 NDAQ
@@ -492,13 +405,12 @@ ODFL
 OKE
 OMC
 ON
+OPERATOR-AX
+OPERATOR-T
 ORCL
 ORLY
 OTIS
 OXY
-Operator-AX
-Operator-T
-Oriental Bank of Commerce-NS
 PAH3-DE
 PANW
 PAYX
@@ -529,7 +441,6 @@ PSX
 PTC
 PWR
 PYPL
-Punjab National Bank-NS
 Q
 QCOM
 QIA-DE
@@ -537,6 +448,7 @@ RCL
 RDDT
 REG
 REGN
+REUTERS-AX
 RF
 RHM-DE
 RJF
@@ -550,15 +462,6 @@ RSG
 RTX
 RVTY
 RWE-DE
-Ranbaxy Laboratories-NS
-Related indices-AX
-Related indices-T
-Reliance Capital-NS
-Reliance Communications-NS
-Reliance Infrastructure-NS
-Reliance Petroleum-NS
-Reliance Power-NS
-Reuters-AX
 SAP-DE
 SBAC
 SBUX
@@ -582,6 +485,7 @@ STLD
 STT
 STX
 STZ
+SUZLON-NS
 SW
 SWK
 SWKS
@@ -589,16 +493,10 @@ SY1-DE
 SYF
 SYK
 SYY
-Satyam Computer Services-NS
-Shipping Corporation of India-NS
-Shree Cement-NS
-Siemens India-NS
-Steel Authority of India-NS
-Sterlite Industries-NS
-Suzlon-NS
 T
 TAP
 TAQA-AD
+TATA TEA-NS
 TDG
 TDY
 TECH
@@ -625,26 +523,20 @@ TTWO
 TXN
 TXT
 TYL
-Tata Chemicals-NS
-Tata Communications-NS
-Tata Power-NS
-Tata Tea-NS
-Trading symbol-AX
-Type-AX
 UAL
 UBER
 UDR
 UHS
 ULTA
 UNH
+UNITECH-NS
 UNP
 UPL-NS
 UPS
 URI
 USB
-Unitech-NS
-United Spirits-NS
 V
+VEDANTA-NS
 VEEV
 VICI
 VLO
@@ -661,7 +553,6 @@ VST
 VTR
 VTRS
 VZ
-Vedanta-NS
 WAB
 WAT
 WBD
@@ -670,6 +561,7 @@ WDC
 WEC
 WELL
 WFC
+WIPRO-NS
 WM
 WMB
 WMT
@@ -679,19 +571,13 @@ WST
 WTW
 WY
 WYNN
-Website-AX
-Website-T
-Weighting method-AX
-Weighting method-T
-Wipro-NS
 XEL
 XOM
 XYL
 XYZ
+YES BANK-NS
 YUM
-Yes Bank-NS
 ZAL-DE
 ZBH
 ZBRA
 ZTS
-Zee Entertainment Enterprises-NS
