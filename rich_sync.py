@@ -98,13 +98,20 @@ def main():
 
                     
                     email_results.append({
-                        "ticker": ticker, "close": current_close, 
-                        "change": pct_change, "rsi": rsi_val, "rating": rating
-                    })
-                except Exception:
-                    continue
+                    "ticker": ticker, "close": current_close, 
+                    "change": pct_change, "rsi": rsi_val, "rating": rating
+                })
+            except Exception:
+                continue
+
+        # THIS is the missing except block for the 'try:' on line 70
         except Exception as e:
-            print(f"[RICH ERROR] Batch failure: {e}")
+            print(f"[RICH ERROR] Batch fetch failure: {e}")
+            continue
+
+    if bq_payload:
+        stream_to_bigquery(client, table_id, bq_payload)
+
 
     if bq_payload:
         stream_to_bigquery(client, table_id, bq_payload)
