@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import math
 from datetime import datetime
 import smtplib
 from email.message import EmailMessage
@@ -19,7 +20,7 @@ def calculate_rsi(prices, period=14):
     loss = -delta.where(delta < 0, 0.0).rolling(window=period).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
-    return round(rsi.iloc[-1], 2)
+    return round(float(rsi.iloc[-1]), 2)
 
 def determine_rating(rsi, pct_change):
     if rsi < 35:
@@ -85,8 +86,19 @@ def main():
                     prev_close = round(float(hist['Close'].iloc[-2]), 2)
                     volume = int(hist['Volume'].iloc[-1])
 
+                    # Calculate changes
+                    if prev_close == 0:
+                        continue
+                        
                     pct_change = round(((current_close - prev_close) / prev_close) * 100, 2)
                     rsi_val = calculate_rsi(hist['Close'])
+
+                    # THE FIX: Sanitize NaN and Infinity values before BigQuery rejects them
+                    if math.isnan(current_close) or math.isnan(pct_change) or math.isnan(rsi_val):
+                        continue
+                    if math.isinf(pct_change) or math.isinf(rsi_val):
+                        continue
+
                     rating = determine_rating(rsi_val, pct_change)
 
                     bq_payload.append({
