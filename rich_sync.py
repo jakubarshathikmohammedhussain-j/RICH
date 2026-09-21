@@ -91,7 +91,7 @@ def main():
 
                     bq_payload.append({
                         "timestamp": timestamp_iso,
-                        "entity_id": ticker,
+                        "ticker": ticker,
                         "close_price": current_close,
                         "percent_change": pct_change,
                         "volume": volume,
